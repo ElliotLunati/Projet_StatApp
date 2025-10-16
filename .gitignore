@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Files
+test.wav
+
 # C extensions
 *.so
 
