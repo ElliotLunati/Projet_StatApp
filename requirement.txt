@@ -1,6 +1,4 @@
 pre-commit
-whisper
-fastapi
-torch
+openai-whisper
+fastapi[standard]
 requests
-os
