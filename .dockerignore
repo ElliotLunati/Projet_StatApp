@@ -1,0 +1,53 @@
+# Fichiers de test
+interact_api.py
+test_upload.py
+app/test.wav
+*.wav
+*.mp3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.pre-commit-config.yaml
+
+# Documentation
+README.md
+LICENCE
+requirements-dev.txt
+docs/
+
+# Helm charts (déjà déployés séparément)
+helm-chart/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Tests
+tests/
+interact_with_app/
+test_*.py
+*_test.py
+
+# Autres
+.env
+.DS_Store
+*.log

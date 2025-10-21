@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # Files
-test.wav
+/interact_with_app/test.wav
 
 # C extensions
 *.so

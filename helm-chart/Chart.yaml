@@ -1,0 +1,6 @@
+apiVersion: v2
+name: audio-to-text-api
+description: API de transcription audio avec Whisper
+type: application
+version: 0.1.0
+appVersion: "1.0"

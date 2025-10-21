@@ -7,7 +7,17 @@ repos:
       - id: mixed-line-ending
       - id: check-merge-conflict
       - id: check-yaml
+        exclude: ^helm-chart/templates/
   -   repo: https://github.com/psf/black
       rev: 22.10.0
       hooks:
       -   id: black
+
+  - repo: local
+    hooks:
+      - id: helm-lint
+        name: Helm Lint
+        entry: helm lint helm-chart
+        language: system
+        pass_filenames: false
+        files: ^helm-chart/
