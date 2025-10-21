@@ -44,7 +44,7 @@ API de transcription audio utilisant Whisper d'OpenAI, déployée sur SSP Cloud 
 ### 1. Cloner le projet
 
 ```bash
-git clone <url-du-repo>
+git clone https://github.com/ElliotLunati/Projet_StatApp.git
 cd Projet_StatApp
 ```
 
