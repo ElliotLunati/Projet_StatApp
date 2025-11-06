@@ -8,7 +8,7 @@ import os
 app = FastAPI()
 
 # On utilise le GPU disponible avec ssp cloud
-DEVICE = "cuda"
+DEVICE = "cpu"
 
 # Charger le modèle Whisper au démarrage du serveur
 MODEL_SIZE = "tiny"  # tiny, base, small, medium, large, turbo
