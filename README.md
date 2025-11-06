@@ -67,6 +67,8 @@ pip install -r requirements-dev.txt
 
 ### 4. Tester localement
 
+Installer ffmpeg en suivant le tutoriel suivant : https://www.youtube.com/watch?v=eRZRXpzZfM4
+
 ```bash
 # Lancer l'API
 fastapi dev app/main.py

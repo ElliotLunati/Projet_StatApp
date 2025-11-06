@@ -5,6 +5,7 @@ __pycache__/
 
 # Files
 /interact_with_app/test.wav
+test.wav
 
 # C extensions
 *.so

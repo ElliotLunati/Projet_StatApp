@@ -33,7 +33,7 @@ print(f"Envoi à l'API...")
 
 try:
     with open(audio_path, "rb") as f:
-        files = {"audio_file": (audio_path, f, "audio/wav")}
+        files = {"audio_file": (audio_path, f, "audio/wav")}  # Attention pas tjr wav
         response = requests.post(API_URL, files=files, timeout=120)
 
     if response.status_code == 200:

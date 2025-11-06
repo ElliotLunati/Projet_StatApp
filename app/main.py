@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 import whisper
 import os
+import tempfile
 
 
 # Crée une instance FastAPI
@@ -48,15 +49,29 @@ async def transcribe_audio(
     # Transcription de l'audio uploadé avec whisper
     try:
         print(f"Transcription de {audio_file.filename}...")
-        result = model.transcribe(audio_file.filename)
 
-        return JSONResponse(
-            content={
-                "filename": audio_file.filename,
-                "text": result["text"],
-                "language": result.get("language", "unknown"),
-            }
-        )
+        # Créer un fichier temporaire pour sauvegarder l'audio uploadé
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=file_extension
+        ) as temp_file:
+            # Lire et écrire le contenu du fichier uploadé
+            content = await audio_file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        try:
+            # Transcrire avec le chemin du fichier temporaire
+            result = model.transcribe(temp_path)
+            return JSONResponse(
+                content={
+                    "filename": audio_file.filename,
+                    "text": result["text"],
+                    "language": result.get("language", "unknown"),
+                }
+            )
+        finally:
+            # Nettoyer le fichier temporaire
+            os.unlink(temp_path)
 
     except Exception as e:
         raise HTTPException(
