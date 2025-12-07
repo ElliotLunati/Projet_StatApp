@@ -1,2 +1,3 @@
 openai-whisper
 fastapi[standard]
+numpy<2

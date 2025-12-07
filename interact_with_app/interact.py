@@ -4,8 +4,8 @@ from tkinter import Tk, filedialog
 print("Testing audio transcription API")
 
 # URL de votre API déployée
-API_URL = "https://audio-to-text-user-elliot.lab.sspcloud.fr/transcribe"
-# API_URL = "http://localhost:8000/transcribe"
+# API_URL = "https://audio-to-text-user-elliot.lab.sspcloud.fr/transcribe"
+API_URL = "http://localhost:8000/transcribe"
 
 # Ouvrir l'explorateur de fichiers pour choisir un fichier audio
 root = Tk()
