@@ -46,6 +46,7 @@ tests/
 interact_with_app/
 test_*.py
 *_test.py
+app/main_legacy.py
 
 # Autres
 .env
