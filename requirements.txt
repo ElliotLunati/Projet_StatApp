@@ -1,2 +1,7 @@
 openai-whisper
 fastapi[standard]
+python-dotenv
+torch
+torchaudio
+soundfile
+pyannote.audio==4.0.3

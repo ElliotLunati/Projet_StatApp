@@ -1,383 +1,65 @@
+import warnings
+
+from sklearn.pipeline import Pipeline
+
+warnings.filterwarnings("ignore")
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, FileResponse
 import whisper
 import os
 import tempfile
+import torch
+import torchaudio
+from pyannote.audio import Pipeline
+
+
+# Crée une instance FastAPI
+app = FastAPI()
+
+# Vérification de la disponibilité du GPU
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+    print(f"GPU disponible: {torch.cuda.get_device_name(0)}")
+    print(f"Nombre de GPUs: {torch.cuda.device_count()}")
+else:
+    DEVICE = torch.device("cpu")
+    print("GPU non disponible, utilisation du CPU")
+
+# Charger le modèle Whisper au démarrage du serveur
+MODEL_SIZE = "tiny"  # tiny, base, small, medium, large, turbo
+
+print(f"Chargement du modèle Whisper {MODEL_SIZE} sur {DEVICE}")
+model = whisper.load_model(MODEL_SIZE, device=str(DEVICE))
+print("Modèle Whisper chargé avec succès!")
+
+# Charger la pipeline de diarisation au démarrage du serveur
+print("Chargement de la pipeline de diarisation")
+
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    diarization_model_path = os.path.join(
+        current_dir, "pyannote-speaker-diarization-community-1"
+    )
+    diarization_pipeline = Pipeline.from_pretrained(diarization_model_path)
+    diarization_pipeline.to(DEVICE)
+    print("Pipeline de diarisation chargée avec succès")
+
+except Exception as e:
+    print("\n Erreur : les modèles de diarisation n'ont pas pu être chargés.")
+    print(e)
 
 # GET : get info / return info (lecture de données uniquement)
 # POST : créer ressource dans db (envoie de données)
 # PUT : mettre à jour ressource dans db
 # DELETE : supprimer ressource dans db
 
-# Crée une instance FastAPI
-app = FastAPI()
 
-# On utilise le GPU disponible avec ssp cloud
-DEVICE = "cuda"
-
-# Charger le modèle Whisper au démarrage du serveur
-MODEL_SIZE = "tiny"  # tiny, base, small, medium, large, turbo
-
-print(f"Chargement du modèle Whisper {MODEL_SIZE} sur {DEVICE}...")
-model = whisper.load_model(MODEL_SIZE, device=DEVICE)
-print("Modèle chargé avec succès!")
-
-
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def read_root():
     """Interface web pour uploader et transcrire des fichiers audio"""
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Transcription Audio - Whisper</title>
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 20px;
-            }
-
-            .container {
-                background: white;
-                border-radius: 20px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                padding: 40px;
-                max-width: 800px;
-                width: 100%;
-            }
-
-            h1 {
-                color: #333;
-                margin-bottom: 10px;
-                font-size: 2em;
-            }
-
-            .subtitle {
-                color: #666;
-                margin-bottom: 30px;
-            }
-
-            .drop-zone {
-                border: 3px dashed #667eea;
-                border-radius: 15px;
-                padding: 60px 20px;
-                text-align: center;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                background: #f8f9ff;
-            }
-
-            .drop-zone:hover, .drop-zone.dragover {
-                background: #e8ebff;
-                border-color: #764ba2;
-                transform: scale(1.02);
-            }
-
-            .drop-zone-icon {
-                font-size: 4em;
-                margin-bottom: 20px;
-            }
-
-            .drop-zone-text {
-                color: #667eea;
-                font-size: 1.2em;
-                font-weight: 600;
-                margin-bottom: 10px;
-            }
-
-            .drop-zone-hint {
-                color: #999;
-                font-size: 0.9em;
-            }
-
-            #fileInput {
-                display: none;
-            }
-
-            .file-info {
-                background: #f0f0f0;
-                padding: 15px;
-                border-radius: 10px;
-                margin: 20px 0;
-                display: none;
-            }
-
-            .file-info.active {
-                display: block;
-            }
-
-            .btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                padding: 15px 40px;
-                border-radius: 10px;
-                font-size: 1.1em;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                width: 100%;
-                margin-top: 20px;
-            }
-
-            .btn:hover:not(:disabled) {
-                transform: translateY(-2px);
-                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-            }
-
-            .btn:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-
-            .loading {
-                display: none;
-                text-align: center;
-                margin: 20px 0;
-            }
-
-            .loading.active {
-                display: block;
-            }
-
-            .spinner {
-                border: 4px solid #f3f3f3;
-                border-top: 4px solid #667eea;
-                border-radius: 50%;
-                width: 50px;
-                height: 50px;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 20px;
-            }
-
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-
-            .result {
-                background: #f8f9ff;
-                padding: 25px;
-                border-radius: 15px;
-                margin-top: 20px;
-                display: none;
-                border-left: 5px solid #667eea;
-            }
-
-            .result.active {
-                display: block;
-                animation: slideIn 0.5s ease;
-            }
-
-            @keyframes slideIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(20px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-
-            .result-title {
-                color: #667eea;
-                font-weight: 600;
-                margin-bottom: 15px;
-                font-size: 1.2em;
-            }
-
-            .result-text {
-                color: #333;
-                line-height: 1.6;
-                font-size: 1.1em;
-                word-wrap: break-word;
-            }
-
-            .result-meta {
-                margin-top: 15px;
-                padding-top: 15px;
-                border-top: 1px solid #ddd;
-                color: #666;
-                font-size: 0.9em;
-            }
-
-            .error {
-                background: #ffe0e0;
-                color: #d00;
-                padding: 15px;
-                border-radius: 10px;
-                margin-top: 20px;
-                display: none;
-                border-left: 5px solid #d00;
-            }
-
-            .error.active {
-                display: block;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🎤 Transcription Audio</h1>
-            <p class="subtitle">Convertissez vos fichiers audio en texte avec Whisper AI</p>
-
-            <div class="drop-zone" id="dropZone">
-                <div class="drop-zone-icon">📁</div>
-                <div class="drop-zone-text">Glissez-déposez un fichier audio ici</div>
-                <div class="drop-zone-hint">ou cliquez pour sélectionner (WAV, MP3)</div>
-            </div>
-
-            <input type="file" id="fileInput" accept=".wav,.mp3" />
-
-            <div class="file-info" id="fileInfo">
-                <strong>Fichier sélectionné :</strong> <span id="fileName"></span>
-            </div>
-
-            <button class="btn" id="transcribeBtn" disabled>Transcrire</button>
-
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Transcription en cours...</p>
-            </div>
-
-            <div class="error" id="error"></div>
-
-            <div class="result" id="result">
-                <div class="result-title">📝 Transcription</div>
-                <div class="result-text" id="resultText"></div>
-                <div class="result-meta">
-                    <strong>Fichier :</strong> <span id="resultFile"></span><br>
-                    <strong>Langue détectée :</strong> <span id="resultLang"></span>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            const dropZone = document.getElementById('dropZone');
-            const fileInput = document.getElementById('fileInput');
-            const fileInfo = document.getElementById('fileInfo');
-            const fileName = document.getElementById('fileName');
-            const transcribeBtn = document.getElementById('transcribeBtn');
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
-            const error = document.getElementById('error');
-            const resultText = document.getElementById('resultText');
-            const resultFile = document.getElementById('resultFile');
-            const resultLang = document.getElementById('resultLang');
-
-            let selectedFile = null;
-
-            // Click sur la zone de drop
-            dropZone.addEventListener('click', () => fileInput.click());
-
-            // Drag and drop events
-            dropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropZone.classList.add('dragover');
-            });
-
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
-            });
-
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    handleFile(files[0]);
-                }
-            });
-
-            // Sélection de fichier
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    handleFile(e.target.files[0]);
-                }
-            });
-
-            function handleFile(file) {
-                const validTypes = ['audio/wav', 'audio/mpeg', 'audio/mp3'];
-                const validExtensions = ['.wav', '.mp3'];
-                const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-
-                if (!validExtensions.includes(fileExtension)) {
-                    showError('Format non supporté. Utilisez WAV ou MP3.');
-                    return;
-                }
-
-                selectedFile = file;
-                fileName.textContent = file.name;
-                fileInfo.classList.add('active');
-                transcribeBtn.disabled = false;
-                result.classList.remove('active');
-                error.classList.remove('active');
-            }
-
-            // Transcription
-            transcribeBtn.addEventListener('click', async () => {
-                if (!selectedFile) return;
-
-                const formData = new FormData();
-                formData.append('audio_file', selectedFile);
-
-                transcribeBtn.disabled = true;
-                loading.classList.add('active');
-                result.classList.remove('active');
-                error.classList.remove('active');
-
-                try {
-                    const response = await fetch('/transcribe', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    const data = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(data.detail || 'Erreur lors de la transcription');
-                    }
-
-                    // Afficher les résultats
-                    resultText.textContent = data.text;
-                    resultFile.textContent = data.filename;
-                    resultLang.textContent = data.language.toUpperCase();
-                    result.classList.add('active');
-
-                } catch (err) {
-                    showError(err.message);
-                } finally {
-                    loading.classList.remove('active');
-                    transcribeBtn.disabled = false;
-                }
-            });
-
-            function showError(message) {
-                error.textContent = '❌ ' + message;
-                error.classList.add('active');
-                setTimeout(() => {
-                    error.classList.remove('active');
-                }, 5000);
-            }
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    return FileResponse(template_path)
 
 
 # Endpoint pour la transcription audio
@@ -414,11 +96,64 @@ async def transcribe_audio(
         try:
             # Transcrire avec le chemin du fichier temporaire
             result = model.transcribe(temp_path)
+
+            # Liste dee la forme :
+            # [{"id": 0,"start": 0.0,"end": 3.5,"text": " Hello, how are you?"}, ..]
+            segments = result.get("segments", [])
+
+            for seg in segments:
+                print(
+                    f"[{seg['start']:.1f}s - {seg['end']:.1f}s]: {seg['text'].strip()}"
+                )
+
+            # Diarisation des locuteurs
+            diarization_result = []
+            if diarization_pipeline:
+                try:
+                    print("Diarisation en cours...")
+                    # Charger l'audio avec torchaudio
+                    waveform, sample_rate = torchaudio.load(temp_path)
+
+                    # Préparer l'entrée au format dictionnaire
+                    audio_in_memory = {"waveform": waveform, "sample_rate": sample_rate}
+
+                    # Lancer la diarisation
+                    output = diarization_pipeline(audio_in_memory)
+
+                    # Formater les résultats
+                    for turn, speaker in output.speaker_diarization:
+                        # Trouver le texte correspondant à ce segment temporel
+                        segment_text = ""
+                        for seg in segments:
+                            # Vérifier si le segment Whisper chevauche le segment de diarisation
+                            if seg["start"] < turn.end and seg["end"] > turn.start:
+                                segment_text += seg["text"]
+
+                        diarization_result.append(
+                            {
+                                "start": turn.start,
+                                "end": turn.end,
+                                "speaker": speaker,
+                                "text": segment_text.strip(),
+                            }
+                        )
+                    print(
+                        f"Diarisation terminée: {len(diarization_result)} segments trouvés"
+                    )
+                    for segment in diarization_result:
+                        print(
+                            f"start={segment['start']:.1f}s stop={segment['end']:.1f}s {segment['speaker']} text='{segment['text']}'"
+                        )
+
+                except Exception as e:
+                    print(f"Erreur lors de la diarisation: {e}")
+
             return JSONResponse(
                 content={
                     "filename": audio_file.filename,
                     "text": result["text"],
                     "language": result.get("language", "unknown"),
+                    "diarization": diarization_result if diarization_result else None,
                 }
             )
         finally:

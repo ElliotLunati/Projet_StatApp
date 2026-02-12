@@ -65,16 +65,32 @@ python -m venv venv
 pip install -r requirements-dev.txt
 ```
 
-### 4. Tester localement
+### 4. Installer pyannote pour la diarisation
 
-Installer ffmpeg en suivant le tutoriel suivant : https://www.youtube.com/watch?v=eRZRXpzZfM4
+Suivre le court tutoriel "Setup" sur la page : https://huggingface.co/pyannote/speaker-diarization-community-1
+
+Installer le modèle localement en suivant le tutoriel "Offline use" avec :
+
+```bash
+/path/to/directory = ./app/
+```
+
+### 5. Tester localement
+
+Désinstaller torchcodec, sinon cela mène à des problèmes d'incompatibilité.
+
+```bash
+pip uninstall torchcodec
+```
+
+Installer la version 7.1.1 de ffmpeg en suivant le lien suivant (ctrl + z
+ffmpeg-7.1.1-full_build.7z sur la page pour trouver la bonne version) : https://www.gyan.dev/ffmpeg/builds/
+
+Suivre le tutoriel suivant pour ajouter le chemin vers ffmpeg dans les variables d'environnement : https://www.youtube.com/watch?v=mtGj0Od0Qr4
 
 ```bash
 # Lancer l'API
 fastapi dev app/main.py
-
-# Dans un autre terminal, tester avec le script
-python interact_with_app/interact.py
 ```
 
 L'API sera accessible à l'adresse : `http://localhost:8000`
@@ -173,26 +189,15 @@ L'API sera accessible à l'adresse : `https://audio-to-text-user-votre-username.
 
 ### Étape 6 : Tester l'API déployée
 
-Modifier le fichier `interact_with_app/interact.py` pour utiliser votre URL personnalisée :
-
-```python
-API_URL = "https://audio-to-text-user-votre-username.lab.sspcloud.fr/transcribe"
-```
-
-Puis exécuter le script de test :
+Aller sur l'URL suivant (ne pas oublier de modifier 'votre-username')
 
 ```bash
-python interact_with_app/interact.py
+"https://audio-to-text-user-votre-username.lab.sspcloud.fr/transcribe"
 ```
-
-Le script ouvrira un explorateur de fichiers pour sélectionner un fichier audio et affichera la transcription.
 
 ## Utilisation
 
 ### Endpoints disponibles
-
-- **GET** `/` : Informations sur le serveur (version du modèle, device utilisé)
-- **POST** `/transcribe` : Transcription d'un fichier audio
 
 ### Formats audio supportés
 

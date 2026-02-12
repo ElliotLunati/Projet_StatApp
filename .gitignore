@@ -7,6 +7,7 @@ __pycache__/
 /interact_with_app/test.wav
 test.wav
 /app/main_legacy.py
+test.py
 
 # C extensions
 *.so
