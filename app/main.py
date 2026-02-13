@@ -6,6 +6,7 @@ warnings.filterwarnings("ignore")
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import whisper
 import os
 import tempfile
@@ -16,6 +17,13 @@ from pyannote.audio import Pipeline
 
 # Crée une instance FastAPI
 app = FastAPI()
+
+# Montage du dossier images pour servir les fichiers statiques
+app.mount(
+    "/images",
+    StaticFiles(directory=os.path.join(os.path.dirname(__file__), "images")),
+    name="images",
+)
 
 # Vérification de la disponibilité du GPU
 if torch.cuda.is_available():
