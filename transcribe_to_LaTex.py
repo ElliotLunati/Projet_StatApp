@@ -1,22 +1,16 @@
+import argparse
 import gc
 import json
 import os
 import re
-import tempfile
 import warnings
 from contextlib import contextmanager
 from threading import Lock
-from typing import Generator, Tuple
+from typing import Generator, Optional, Tuple
 
 import torch
-import torchaudio
 import whisper
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from peft import PeftModel
-from pydantic import BaseModel, Field
-from pyannote.audio import Pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 warnings.filterwarnings("ignore")
@@ -30,18 +24,10 @@ RECOVERABLE_ERRORS = (
     torch.cuda.OutOfMemoryError,
 )
 
-
-MODEL_SIZE = "turbo"  # tiny, base, small, medium, large, turbo
-
-
-class TextToLatexRequest(BaseModel):
-    text: str
-    max_new_tokens: int = Field(default=256, ge=32, le=1024)
+ALLOWED_EXTENSIONS = {".wav", ".mp3", ".webm", ".ogg", ".m4a"}
 
 
 class ModelShifter:
-    """Charge les modeles a la demande et bascule proprement entre Whisper et Qwen."""
-
     def __init__(self, whisper_size: str, qwen_adapter_dir: str):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.gpu_available = self.device.type == "cuda"
@@ -65,7 +51,6 @@ class ModelShifter:
     def _read_base_model_name(adapter_dir: str) -> str:
         adapter_config_path = os.path.join(adapter_dir, "adapter_config.json")
         default_base = "Qwen/Qwen3.5-4B"
-
         try:
             with open(adapter_config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
@@ -80,7 +65,6 @@ class ModelShifter:
 
     @staticmethod
     def _extract_assistant_prediction(generated_text: str) -> str:
-        """Nettoie la sortie du modele (balises think/chat) pour ne garder que la reponse utile."""
         if not generated_text:
             return ""
 
@@ -108,9 +92,7 @@ class ModelShifter:
         if self.whisper_model is not None:
             return
 
-        startup_device = (
-            "cpu"  # On le passe sur gpu ensuite pour l'utilisation (si dispo)
-        )
+        startup_device = "cpu"
         print(f"Chargement du modele Whisper {self.whisper_size} sur {startup_device}")
         self.whisper_model = whisper.load_model(
             self.whisper_size, device=startup_device
@@ -120,14 +102,11 @@ class ModelShifter:
     def _offload_whisper(self) -> None:
         if self.whisper_model is not None and self.gpu_available:
             self.whisper_model.to(torch.device("cpu"))
-
         self._cleanup_memory()
 
     def _move_whisper_to_gpu(self) -> None:
-        if not self.gpu_available:
-            return
-
-        self.whisper_model.to(self.device)
+        if self.gpu_available and self.whisper_model is not None:
+            self.whisper_model.to(self.device)
 
     def _ensure_qwen_loaded(self) -> None:
         if self.qwen_model is not None:
@@ -158,10 +137,7 @@ class ModelShifter:
                 low_cpu_mem_usage=True,
             ).to(self.device)
 
-        self.qwen_model = PeftModel.from_pretrained(
-            base_model,
-            self.qwen_adapter_dir,
-        )
+        self.qwen_model = PeftModel.from_pretrained(base_model, self.qwen_adapter_dir)
         self.qwen_model.eval()
 
         if self.qwen_tokenizer is None:
@@ -190,11 +166,7 @@ class ModelShifter:
 
             self._move_whisper_to_gpu()
             self.loaded_model_name = "whisper"
-            try:
-                yield self.whisper_model
-            finally:
-                # Le modele reste charge tant qu'aucun switch explicite n'est demande.
-                pass
+            yield self.whisper_model
 
     @contextmanager
     def use_qwen(self) -> Generator[Tuple, None, None]:
@@ -205,25 +177,44 @@ class ModelShifter:
                 self._ensure_qwen_loaded()
 
             self.loaded_model_name = "qwen"
-            try:
-                yield self.qwen_model, self.qwen_tokenizer
-            finally:
-                # Le modele reste charge tant qu'aucun switch explicite n'est demande.
-                pass
+            yield self.qwen_model, self.qwen_tokenizer
+
+    def transcribe_audio(self, audio_path: str, language: Optional[str] = None) -> dict:
+        ext = os.path.splitext(audio_path)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise ValueError(
+                f"Format non supporte: {ext}. Formats acceptes: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            )
+
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Fichier introuvable: {audio_path}")
+
+        with self.use_whisper() as whisper_model:
+            kwargs = {}
+            if language:
+                kwargs["language"] = language
+            result = whisper_model.transcribe(audio_path, **kwargs)
+
+        return {
+            "text": result.get("text", "").strip(),
+            "language": result.get("language", "unknown"),
+            "segments": result.get("segments", []),
+        }
 
     def generate_latex(self, text: str, max_new_tokens: int = 256) -> str:
+        text_input = text.strip()
+        if not text_input:
+            raise ValueError("Le texte de transcription est vide")
+
         with self.use_qwen() as (model, tokenizer):
-            # Prompt aligne avec le schema d'inference valide dans evaluation.py.
             messages = [
                 {
                     "role": "system",
-                    "content": (
-                        "Tu es un assistant mathematique qui traduit de l'anglais parle vers des equations."
-                    ),
+                    "content": "Tu es un assistant mathematique qui traduit de l'anglais parle vers des equations.",
                 },
                 {
                     "role": "user",
-                    "content": text,
+                    "content": text_input,
                 },
             ]
 
@@ -244,11 +235,10 @@ class ModelShifter:
                 prompt = (
                     "Convertis ce texte mathematique en code LaTeX. "
                     "Reponds uniquement avec du LaTeX.\n\n"
-                    f"Texte:\n{text}\n\nLaTeX:\n"
+                    f"Texte:\n{text_input}\n\nLaTeX:\n"
                 )
 
             model_inputs = tokenizer(prompt, return_tensors="pt")
-
             model_device = self._get_model_device(model)
             model_inputs = {k: v.to(model_device) for k, v in model_inputs.items()}
             input_length = model_inputs["input_ids"].shape[-1]
@@ -273,104 +263,179 @@ class ModelShifter:
 
             return latex_code
 
-
-app = FastAPI()
-
-app.mount(
-    "/images",
-    StaticFiles(directory=os.path.join(os.path.dirname(__file__), "images")),
-    name="images",
-)
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-qwen_adapter_path = os.path.join(current_dir, "..", "qwen-mathbridge-qlora", "final")
-qwen_adapter_path = os.path.abspath(qwen_adapter_path)
-
-model_shifter = ModelShifter(
-    whisper_size=MODEL_SIZE,
-    qwen_adapter_dir=qwen_adapter_path,
-)
-
-
-@app.get("/")
-def read_root():
-    """Interface web pour uploader et transcrire des fichiers audio"""
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    return FileResponse(template_path)
-
-
-@app.post("/transcribe")
-async def transcribe_audio(
-    audio_file: UploadFile = File(...),
-):
-    """
-    Reçoit un fichier audio et retourne la transcription texte
-    """
-    allowed_extensions = [".wav", ".mp3", ".webm", ".ogg", ".m4a"]
-    file_extension = os.path.splitext(audio_file.filename)[1].lower()
-
-    if file_extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Format non supporté. Formats acceptés: {', '.join(allowed_extensions)}",
+    def transcribe_to_latex(
+        self,
+        audio_path: str,
+        max_new_tokens: int = 256,
+        language: Optional[str] = None,
+    ) -> dict:
+        transcription = self.transcribe_audio(audio_path, language=language)
+        latex = self.generate_latex(
+            transcription["text"], max_new_tokens=max_new_tokens
         )
+        return {
+            "audio_file": audio_path,
+            "language": transcription["language"],
+            "text": transcription["text"],
+            "latex": latex,
+        }
+
+
+def default_adapter_dir() -> str:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(current_dir, "qwen-mathbridge-qlora", "final"))
+
+
+def list_wav_files(directory_path: str) -> list[str]:
+    wav_files = []
+    for file_name in os.listdir(directory_path):
+        full_path = os.path.join(directory_path, file_name)
+        if os.path.isfile(full_path) and file_name.lower().endswith(".wav"):
+            wav_files.append(full_path)
+    wav_files.sort()
+    return wav_files
+
+
+def resolve_output_json_path(input_path: str, output_json: Optional[str]) -> str:
+    if output_json:
+        return os.path.abspath(output_json)
+
+    if os.path.isdir(input_path):
+        return os.path.join(input_path, "transcriptions_latex.json")
+
+    stem = os.path.splitext(os.path.basename(input_path))[0]
+    return os.path.join(
+        os.path.dirname(input_path),
+        f"{stem}_transcription_latex.json",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Transcription audio (Whisper) + conversion en LaTeX (Qwen LoRA)."
+    )
+    parser.add_argument(
+        "input_path",
+        help="Chemin vers un fichier audio ou un dossier contenant des fichiers .wav",
+    )
+    parser.add_argument(
+        "output_json",
+        help=(
+            "Chemin de sortie JSON. Si absent et input_path est un dossier, "
+            "le fichier transcriptions_latex.json est cree dans ce dossier."
+        ),
+    )
+    parser.add_argument(
+        "--adapter-dir",
+        default=default_adapter_dir(),
+        help="Chemin vers le dossier adaptateur LoRA Qwen",
+    )
+    parser.add_argument(
+        "--model-size",
+        default="turbo",
+        choices=["tiny", "base", "small", "medium", "large", "turbo"],
+        help="Taille du modele Whisper",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=256,
+        help="Nombre max de tokens generes pour la sortie LaTeX",
+    )
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Langue forcee pour Whisper (ex: fr, en). Laisser vide pour auto-detection.",
+    )
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
 
     try:
-        print(f"Transcription de {audio_file.filename}...")
+        input_path = os.path.abspath(args.input_path)
 
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=file_extension
-        ) as temp_file:
-            content = await audio_file.read()
-            temp_file.write(content)
-            temp_path = temp_file.name
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Chemin introuvable: {input_path}")
 
-        try:
-            with model_shifter.use_whisper() as whisper_model:
-                result = whisper_model.transcribe(temp_path)
+        model_shifter = ModelShifter(
+            whisper_size=args.model_size,
+            qwen_adapter_dir=os.path.abspath(args.adapter_dir),
+        )
 
-                segments = result.get("segments", [])
-                for seg in segments:
-                    print(
-                        f"[{seg['start']:.1f}s - {seg['end']:.1f}s]: {seg['text'].strip()}"
-                    )
+        output_rows = []
 
-            return JSONResponse(
-                content={
-                    "filename": audio_file.filename,
-                    "text": result["text"],
-                    "language": result.get("language", "unknown"),
+        if os.path.isdir(input_path):
+            wav_files = list_wav_files(input_path)
+            if not wav_files:
+                raise FileNotFoundError(
+                    f"Aucun fichier .wav trouve dans le dossier: {input_path}"
+                )
+
+            print(f"Traitement de {len(wav_files)} fichier(s) .wav...")
+            for audio_path in wav_files:
+                print(f"\n--- {os.path.basename(audio_path)} ---")
+                result = model_shifter.transcribe_to_latex(
+                    audio_path=audio_path,
+                    max_new_tokens=args.max_new_tokens,
+                    language=args.language,
+                )
+
+                output_rows.append(
+                    {
+                        "nom_fichier_audio": os.path.basename(audio_path),
+                        "transcription": result["text"],
+                        "Latex": result["latex"],
+                    }
+                )
+
+                print("Transcription:")
+                print(result["text"])
+                print("LaTeX:")
+                print(result["latex"])
+
+            output_json_path = resolve_output_json_path(input_path, args.output_json)
+            with open(output_json_path, "w", encoding="utf-8") as f:
+                json.dump(output_rows, f, ensure_ascii=False, indent=2)
+
+            print(f"\nResultats JSON ecrits dans: {output_json_path}")
+        else:
+            result = model_shifter.transcribe_to_latex(
+                audio_path=input_path,
+                max_new_tokens=args.max_new_tokens,
+                language=args.language,
+            )
+
+            print("\n=== Transcription ===")
+            print(result["text"])
+            print("\n=== LaTeX ===")
+            print(result["latex"])
+
+            output_rows.append(
+                {
+                    "nom_fichier_audio": os.path.basename(input_path),
+                    "transcription": result["text"],
+                    "Latex": result["latex"],
                 }
             )
-        finally:
-            # Nettoyer le fichier temporaire
-            os.unlink(temp_path)
 
-    except RECOVERABLE_ERRORS as e:
-        raise HTTPException(
-            status_code=500, detail=f"Erreur lors de la transcription: {str(e)}"
-        ) from e
+            if args.output_json:
+                output_json_path = resolve_output_json_path(
+                    input_path, args.output_json
+                )
+                with open(output_json_path, "w", encoding="utf-8") as f:
+                    json.dump(output_rows, f, ensure_ascii=False, indent=2)
+                print(f"\nResultat JSON ecrit dans: {output_json_path}")
+
+        return 0
+
+    except RECOVERABLE_ERRORS + (FileNotFoundError,) as e:
+        print(f"Erreur: {e}")
+        return 1
 
 
-@app.post("/text-to-latex")
-async def text_to_latex(payload: TextToLatexRequest):
-    text_input = payload.text.strip()
-    if not text_input:
-        raise HTTPException(status_code=400, detail="Le champ texte est vide")
-
-    try:
-        latex_code = model_shifter.generate_latex(
-            text=text_input,
-            max_new_tokens=payload.max_new_tokens,
-        )
-        return JSONResponse(
-            content={
-                "input_text": payload.text,
-                "latex": latex_code,
-            }
-        )
-    except RECOVERABLE_ERRORS as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur lors de la generation LaTeX: {str(e)}",
-        ) from e
+if __name__ == "__main__":
+    raise SystemExit(main())

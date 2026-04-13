@@ -5,3 +5,4 @@ torch
 torchaudio
 soundfile
 pyannote.audio==4.0.3
+peft

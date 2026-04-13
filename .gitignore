@@ -8,6 +8,10 @@ __pycache__/
 test.wav
 /app/main_legacy.py
 test.py
+audio
+
+# Model files
+whisper-speech2latex-lora4bit
 
 # C extensions
 *.so

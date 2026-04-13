@@ -1,3 +1,11 @@
 -r requirements.txt
 pre-commit
 requests
+evaluate
+jiwer
+transformers
+datasets
+bitsandbytes
+accelerate
+trl
+librosa

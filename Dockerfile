@@ -8,7 +8,7 @@ COPY ./requirements.txt /code/requirements.txt
 
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-RUN python -c "import whisper; whisper.load_model('tiny')"
+RUN python -c "import whisper; whisper.load_model('turbo')"
 
 COPY ./app /code/app
 

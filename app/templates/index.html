@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transcription Audio - Whisper</title>
+    <title>Audio et Texte vers LaTeX</title>
     <style>
         * {
             margin: 0;
@@ -26,7 +26,7 @@
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             padding: 40px;
-            max-width: 800px;
+            max-width: 900px;
             width: 100%;
             position: relative;
         }
@@ -49,6 +49,38 @@
         .subtitle {
             color: #666;
             margin-bottom: 30px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            margin-top: 12px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            border: 2px solid #C41E3A;
+            background: white;
+            color: #C41E3A;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #C41E3A 0%, #8B1538 100%);
+            color: white;
+        }
+
+        .panel {
+            display: none;
+        }
+
+        .panel.active {
+            display: block;
         }
 
         .drop-zone {
@@ -86,6 +118,79 @@
 
         #fileInput {
             display: none;
+        }
+
+        .record-section {
+            margin-top: 16px;
+            padding: 16px;
+            border: 1px solid #f0d1d8;
+            border-radius: 12px;
+            background: #fffafb;
+        }
+
+        .record-title {
+            color: #8B1538;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .record-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .record-btn {
+            flex: 1;
+            min-width: 220px;
+            border: 2px solid #C41E3A;
+            border-radius: 15px;
+            background: #fff5f7;
+            color: #C41E3A;
+            padding: 16px 18px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .record-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .record-btn:hover:not(:disabled) {
+            background: #ffe5eb;
+            border-color: #8B1538;
+            transform: scale(1.02);
+        }
+
+        .record-btn.stop {
+            border-color: #8B1538;
+            background: #ffe5eb;
+            color: #8B1538;
+        }
+
+        .record-status {
+            margin-top: 10px;
+            color: #555;
+            font-size: 0.95em;
+        }
+
+        .record-status.recording {
+            color: #C41E3A;
+            font-weight: 700;
+        }
+
+        .record-preview {
+            margin-top: 12px;
+            width: 100%;
+            display: none;
+        }
+
+        .record-preview.active {
+            display: block;
         }
 
         .file-info {
@@ -210,127 +315,159 @@
             display: block;
         }
 
-        .diarization {
-            background: #fff4e6;
-            padding: 25px;
-            border-radius: 15px;
-            margin-top: 20px;
-            display: none;
-            border-left: 5px solid #ff9800;
+        .text-input {
+            width: 100%;
+            min-height: 150px;
+            resize: vertical;
+            border: 2px solid #f0d1d8;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 1rem;
+            line-height: 1.5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: border-color 0.2s ease;
+            background: #fffafb;
         }
 
-        .diarization.active {
+        .text-input:focus {
+            border-color: #C41E3A;
+            outline: none;
+        }
+
+        .hint {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+        }
+
+        .latex-box {
+            background: #faf6ff;
+            border-radius: 12px;
+            border-left: 5px solid #673ab7;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .latex-box.active {
             display: block;
             animation: slideIn 0.5s ease;
         }
 
-        .diarization-title {
-            color: #ff9800;
-            font-weight: 600;
-            margin-bottom: 15px;
-            font-size: 1.2em;
+        .latex-title {
+            color: #673ab7;
+            font-weight: 700;
+            margin-bottom: 12px;
         }
 
-        .speaker-segment {
-            background: white;
-            padding: 12px 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border-left: 4px solid #ff9800;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            transition: all 0.2s ease;
-        }
-
-        .speaker-segment:hover {
-            transform: translateX(5px);
-            box-shadow: 0 2px 8px rgba(255, 152, 0, 0.2);
-        }
-
-        .speaker-badge {
-            background: #ff9800;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9em;
-            min-width: 80px;
-            text-align: center;
-        }
-
-        .speaker-time {
-            color: #666;
-            font-size: 0.9em;
+        .latex-code {
+            background: #f4edf9;
+            border-radius: 10px;
+            padding: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
             font-family: 'Courier New', monospace;
+            color: #2f1a47;
+            margin-bottom: 16px;
         }
 
-        .no-diarization {
-            color: #999;
-            font-style: italic;
-            text-align: center;
-            padding: 20px;
+        .latex-preview {
+            background: white;
+            border: 1px solid #e5d5f7;
+            border-radius: 10px;
+            padding: 16px;
+            color: #333;
+            overflow-x: auto;
         }
 
-        .speaker-highlight {
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-weight: 500;
-        }
-
-        .speaker-0 { background-color: #ffebee; }
-        .speaker-1 { background-color: #e3f2fd; }
-        .speaker-2 { background-color: #e8f5e9; }
-        .speaker-3 { background-color: #fff3e0; }
-        .speaker-4 { background-color: #f3e5f5; }
-        .speaker-5 { background-color: #e0f2f1; }
-        .speaker-6 { background-color: #fce4ec; }
-        .speaker-7 { background-color: #e8eaf6; }
     </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
 <body>
     <div class="container">
         <img src="/images/LOGO-ENSAE.png" alt="Logo ENSAE" class="logo-ensae">
-        <h1> Transcription Audio</h1>
-        <p class="subtitle">Convertissez vos fichiers audio en texte avec Whisper AI</p>
+        <h1>Studio Audio et LaTeX</h1>
+        <p class="subtitle">Transcription Whisper et conversion Texte vers LaTeX avec Qwen QLoRA</p>
 
-        <div class="drop-zone" id="dropZone">
-            <div class="drop-zone-icon">📁</div>
-            <div class="drop-zone-text">Glissez-déposez un fichier audio ici</div>
-            <div class="drop-zone-hint">ou cliquez pour sélectionner (WAV, MP3)</div>
+        <div class="tabs">
+            <button class="tab-btn active" id="audioTab">Audio vers Texte</button>
+            <button class="tab-btn" id="latexTab">Texte vers LaTeX</button>
         </div>
 
-        <input type="file" id="fileInput" accept=".wav,.mp3" />
-
-        <div class="file-info" id="fileInfo">
-            <strong>Fichier sélectionné :</strong> <span id="fileName"></span>
-        </div>
-
-        <button class="btn" id="transcribeBtn" disabled>Transcrire</button>
-
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Transcription en cours...</p>
-        </div>
-
-        <div class="error" id="error"></div>
-
-        <div class="result" id="result">
-            <div class="result-title"> Transcription</div>
-            <div class="result-text" id="resultText"></div>
-            <div class="result-meta">
-                <strong>Fichier :</strong> <span id="resultFile"></span><br>
-                <strong>Langue détectée :</strong> <span id="resultLang"></span>
+        <section class="panel active" id="audioPanel">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-icon">📁</div>
+                <div class="drop-zone-text">Glissez-déposez un fichier audio ici</div>
+                <div class="drop-zone-hint">ou cliquez pour sélectionner (WAV, MP3, WEBM)</div>
             </div>
-        </div>
 
-        <div class="diarization" id="diarization">
-            <div class="diarization-title"> Diarisation des locuteurs</div>
-            <div id="diarizationContent"></div>
-        </div>
+            <input type="file" id="fileInput" accept=".wav,.mp3,.webm,.ogg,.m4a" />
+
+            <div class="record-section">
+                <div class="record-title">Ou enregistrez depuis votre micro</div>
+                <div class="record-controls">
+                    <button class="record-btn start" id="startRecordBtn">Demarrer l'enregistrement</button>
+                    <button class="record-btn stop" id="stopRecordBtn" disabled>Arreter</button>
+                </div>
+                <div class="record-status" id="recordStatus">Pret a enregistrer.</div>
+                <audio class="record-preview" id="recordPreview" controls></audio>
+            </div>
+
+            <div class="file-info" id="fileInfo">
+                <strong>Fichier sélectionné :</strong> <span id="fileName"></span>
+            </div>
+
+            <button class="btn" id="transcribeBtn" disabled>Transcrire</button>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Transcription en cours...</p>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="result" id="result">
+                <div class="result-title">Transcription</div>
+                <div class="result-text" id="resultText"></div>
+                <div class="result-meta">
+                    <strong>Fichier :</strong> <span id="resultFile"></span><br>
+                    <strong>Langue détectée :</strong> <span id="resultLang"></span>
+                </div>
+            </div>
+
+        </section>
+
+        <section class="panel" id="latexPanel">
+            <p class="hint">Entrez une expression ou une phrase mathematique a convertir en LaTeX.</p>
+            <textarea
+                id="mathTextInput"
+                class="text-input"
+                placeholder="Exemple: somme de i=1 a n de i carre est egale a n(n+1)(2n+1)/6"
+            ></textarea>
+            <button class="btn" id="latexBtn">Generer LaTeX</button>
+
+            <div class="loading" id="latexLoading">
+                <div class="spinner"></div>
+                <p>Generation LaTeX en cours...</p>
+            </div>
+
+            <div class="error" id="latexError"></div>
+
+            <div class="latex-box" id="latexResultBox">
+                <div class="latex-title">Code LaTeX genere</div>
+                <pre class="latex-code" id="latexCode"></pre>
+                <div class="latex-title">Apercu</div>
+                <div class="latex-preview" id="latexPreview"></div>
+            </div>
+        </section>
     </div>
 
     <script>
+        const audioTab = document.getElementById('audioTab');
+        const latexTab = document.getElementById('latexTab');
+        const audioPanel = document.getElementById('audioPanel');
+        const latexPanel = document.getElementById('latexPanel');
+
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileInfo = document.getElementById('fileInfo');
@@ -342,10 +479,41 @@
         const resultText = document.getElementById('resultText');
         const resultFile = document.getElementById('resultFile');
         const resultLang = document.getElementById('resultLang');
-        const diarization = document.getElementById('diarization');
-        const diarizationContent = document.getElementById('diarizationContent');
+        const startRecordBtn = document.getElementById('startRecordBtn');
+        const stopRecordBtn = document.getElementById('stopRecordBtn');
+        const recordStatus = document.getElementById('recordStatus');
+        const recordPreview = document.getElementById('recordPreview');
+
+        const mathTextInput = document.getElementById('mathTextInput');
+        const latexBtn = document.getElementById('latexBtn');
+        const latexLoading = document.getElementById('latexLoading');
+        const latexError = document.getElementById('latexError');
+        const latexResultBox = document.getElementById('latexResultBox');
+        const latexCode = document.getElementById('latexCode');
+        const latexPreview = document.getElementById('latexPreview');
 
         let selectedFile = null;
+        let mediaRecorder = null;
+        let recordingStream = null;
+        let recordedChunks = [];
+        let recordPreviewUrl = null;
+
+        function activateTab(target) {
+            if (target === 'audio') {
+                audioTab.classList.add('active');
+                latexTab.classList.remove('active');
+                audioPanel.classList.add('active');
+                latexPanel.classList.remove('active');
+            } else {
+                latexTab.classList.add('active');
+                audioTab.classList.remove('active');
+                latexPanel.classList.add('active');
+                audioPanel.classList.remove('active');
+            }
+        }
+
+        audioTab.addEventListener('click', () => activateTab('audio'));
+        latexTab.addEventListener('click', () => activateTab('latex'));
 
         // Click sur la zone de drop
         dropZone.addEventListener('click', () => fileInput.click());
@@ -376,13 +544,20 @@
             }
         });
 
+        startRecordBtn.addEventListener('click', async () => {
+            await startRecording();
+        });
+
+        stopRecordBtn.addEventListener('click', () => {
+            stopRecording();
+        });
+
         function handleFile(file) {
-            const validTypes = ['audio/wav', 'audio/mpeg', 'audio/mp3'];
-            const validExtensions = ['.wav', '.mp3'];
+            const validExtensions = ['.wav', '.mp3', '.webm', '.ogg', '.m4a'];
             const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
 
             if (!validExtensions.includes(fileExtension)) {
-                showError('Format non supporté. Utilisez WAV ou MP3.');
+                showError(error, 'Format non supporte. Utilisez WAV, MP3, WEBM, OGG ou M4A.');
                 return;
             }
 
@@ -391,8 +566,90 @@
             fileInfo.classList.add('active');
             transcribeBtn.disabled = false;
             result.classList.remove('active');
-            diarization.classList.remove('active');
             error.classList.remove('active');
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showError(error, 'Votre navigateur ne supporte pas l enregistrement audio.');
+                return;
+            }
+
+            try {
+                recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                let mimeType = '';
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                } else if (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+                    mimeType = 'audio/ogg;codecs=opus';
+                }
+
+                mediaRecorder = mimeType
+                    ? new MediaRecorder(recordingStream, { mimeType })
+                    : new MediaRecorder(recordingStream);
+
+                recordedChunks = [];
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const recorderMimeType = mediaRecorder.mimeType || 'audio/webm';
+                    const extension = recorderMimeType.includes('ogg') ? 'ogg' : 'webm';
+                    const blob = new Blob(recordedChunks, { type: recorderMimeType });
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    const recordingName = `recording-${timestamp}.${extension}`;
+
+                    selectedFile = new File([blob], recordingName, { type: recorderMimeType });
+                    fileName.textContent = `${selectedFile.name} (enregistrement)`;
+                    fileInfo.classList.add('active');
+                    transcribeBtn.disabled = false;
+                    result.classList.remove('active');
+                    error.classList.remove('active');
+
+                    if (recordPreviewUrl) {
+                        URL.revokeObjectURL(recordPreviewUrl);
+                    }
+                    recordPreviewUrl = URL.createObjectURL(blob);
+                    recordPreview.src = recordPreviewUrl;
+                    recordPreview.classList.add('active');
+
+                    recordStatus.textContent = 'Enregistrement termine. Vous pouvez lancer la transcription.';
+                    recordStatus.classList.remove('recording');
+                };
+
+                mediaRecorder.start();
+                startRecordBtn.disabled = true;
+                stopRecordBtn.disabled = false;
+                recordStatus.textContent = 'Enregistrement en cours...';
+                recordStatus.classList.add('recording');
+            } catch (err) {
+                showError(error, 'Impossible d acceder au micro. Verifiez les permissions du navigateur.');
+                if (recordingStream) {
+                    recordingStream.getTracks().forEach((track) => track.stop());
+                    recordingStream = null;
+                }
+            }
+        }
+
+        function stopRecording() {
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+                return;
+            }
+
+            mediaRecorder.stop();
+            if (recordingStream) {
+                recordingStream.getTracks().forEach((track) => track.stop());
+                recordingStream = null;
+            }
+
+            startRecordBtn.disabled = false;
+            stopRecordBtn.disabled = true;
         }
 
         // Transcription
@@ -405,7 +662,6 @@
             transcribeBtn.disabled = true;
             loading.classList.add('active');
             result.classList.remove('active');
-            diarization.classList.remove('active');
             error.classList.remove('active');
 
             try {
@@ -423,97 +679,68 @@
                 // Afficher les résultats
                 resultFile.textContent = data.filename;
                 resultLang.textContent = data.language.toUpperCase();
-
-                // Afficher la diarisation si disponible
-                if (data.diarization && data.diarization.length > 0) {
-                    // Afficher le texte avec surlignage par speaker
-                    displayHighlightedText(data.diarization);
-                    displayDiarization(data.diarization);
-                    diarization.classList.add('active');
-                } else {
-                    // Sans diarisation, afficher le texte normal
-                    resultText.textContent = data.text;
-                    diarizationContent.innerHTML = '<div class="no-diarization">Diarisation non disponible</div>';
-                    diarization.classList.add('active');
-                }
+                resultText.textContent = data.text || 'Aucun texte detecte';
 
                 result.classList.add('active');
 
             } catch (err) {
-                showError(err.message);
+                showError(error, err.message);
             } finally {
                 loading.classList.remove('active');
                 transcribeBtn.disabled = false;
             }
         });
 
-        function displayHighlightedText(segments) {
-            // Créer un mapping des speakers vers des indices de couleur
-            const speakerMap = {};
-            let colorIndex = 0;
-            segments.forEach(seg => {
-                if (!speakerMap[seg.speaker]) {
-                    speakerMap[seg.speaker] = colorIndex % 8;
-                    colorIndex++;
+        latexBtn.addEventListener('click', async () => {
+            const text = mathTextInput.value.trim();
+            if (!text) {
+                showError(latexError, 'Veuillez saisir un texte a convertir en LaTeX.');
+                return;
+            }
+
+            latexBtn.disabled = true;
+            latexLoading.classList.add('active');
+            latexError.classList.remove('active');
+            latexResultBox.classList.remove('active');
+
+            try {
+                const response = await fetch('/text-to-latex', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text,
+                        max_new_tokens: 256
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Erreur lors de la conversion vers LaTeX');
                 }
-            });
 
-            // Construire le texte surligné
-            let highlightedHTML = '';
-            segments.forEach(segment => {
-                if (segment.text) {
-                    const colorClass = `speaker-${speakerMap[segment.speaker]}`;
-                    highlightedHTML += `<span class="speaker-highlight ${colorClass}">${segment.text}</span> `;
+                latexCode.textContent = data.latex;
+                latexPreview.textContent = `$$${data.latex}$$`;
+                latexResultBox.classList.add('active');
+
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    await window.MathJax.typesetPromise([latexPreview]);
                 }
-            });
+            } catch (err) {
+                showError(latexError, err.message);
+            } finally {
+                latexLoading.classList.remove('active');
+                latexBtn.disabled = false;
+            }
+        });
 
-            resultText.innerHTML = highlightedHTML || 'Aucun texte détecté';
-        }
-
-        function displayDiarization(segments) {
-            // Créer un mapping des speakers vers des indices de couleur
-            const speakerMap = {};
-            let colorIndex = 0;
-            segments.forEach(seg => {
-                if (!speakerMap[seg.speaker]) {
-                    speakerMap[seg.speaker] = colorIndex % 8;
-                    colorIndex++;
-                }
-            });
-
-            let html = '';
-            segments.forEach(segment => {
-                const duration = segment.end - segment.start;
-                const colorClass = `speaker-${speakerMap[segment.speaker]}`;
-                const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--speaker-color') || '#ff9800';
-
-                html += `
-                    <div class="speaker-segment">
-                        <div class="speaker-badge" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);">${segment.speaker}</div>
-                        <div style="flex: 1;">
-                            <div class="speaker-time">
-                                ${formatTime(segment.start)} → ${formatTime(segment.end)}
-                                (${duration.toFixed(1)}s)
-                            </div>
-                            ${segment.text ? `<div style="margin-top: 8px; color: #333;" class="${colorClass}">${segment.text}</div>` : ''}
-                        </div>
-                    </div>
-                `;
-            });
-            diarizationContent.innerHTML = html;
-        }
-
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        function showError(message) {
-            error.textContent = message;
-            error.classList.add('active');
+        function showError(target, message) {
+            target.textContent = message;
+            target.classList.add('active');
             setTimeout(() => {
-                error.classList.remove('active');
+                target.classList.remove('active');
             }, 5000);
         }
     </script>
