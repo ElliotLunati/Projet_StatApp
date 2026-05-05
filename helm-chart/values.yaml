@@ -1,4 +1,4 @@
-replicaCount: 3
+replicaCount: 1
 
 image:
   repository: elliotl9213/audio-to-text
@@ -20,15 +20,11 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: audio-to-text-tls
-      hosts:
-        - audio-to-text-user-elliot.lab.sspcloud.fr
 
 resources:
   limits:
-    memory: 4Gi
+    memory: 16Gi
     nvidia.com/gpu: 1
   requests:
-    memory: 2Gi
+    memory: 16Gi
     nvidia.com/gpu: 1

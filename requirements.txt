@@ -6,3 +6,11 @@ torchaudio
 soundfile
 pyannote.audio==4.0.3
 peft
+transformers
+evaluate
+jiwer
+datasets
+bitsandbytes
+accelerate
+trl
+librosa

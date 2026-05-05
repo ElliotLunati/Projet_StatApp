@@ -283,8 +283,18 @@ app.mount(
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-qwen_adapter_path = os.path.join(current_dir, "..", "qwen-mathbridge-qlora", "final")
-qwen_adapter_path = os.path.abspath(qwen_adapter_path)
+qwen_adapter_candidates = [
+    os.path.join(current_dir, "qwen-mathbridge-qlora", "final"),
+    os.path.join(current_dir, "..", "qwen-mathbridge-qlora", "final"),
+]
+qwen_adapter_path = next(
+    (
+        os.path.abspath(candidate)
+        for candidate in qwen_adapter_candidates
+        if os.path.isdir(candidate)
+    ),
+    os.path.abspath(qwen_adapter_candidates[0]),
+)
 
 model_shifter = ModelShifter(
     whisper_size=MODEL_SIZE,

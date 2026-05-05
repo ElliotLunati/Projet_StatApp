@@ -13,6 +13,9 @@ audio
 # Model files
 whisper-speech2latex-lora4bit
 
+/app/qwen-mathbridge-qlora/
+.vscode/
+
 # C extensions
 *.so
 

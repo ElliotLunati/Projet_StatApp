@@ -715,7 +715,14 @@
                     })
                 });
 
-                const data = await response.json();
+                const responseText = await response.text();
+                let data = null;
+
+                try {
+                    data = responseText ? JSON.parse(responseText) : {};
+                } catch (parseError) {
+                    data = { detail: responseText || 'Réponse invalide du serveur' };
+                }
 
                 if (!response.ok) {
                     throw new Error(data.detail || 'Erreur lors de la conversion vers LaTeX');

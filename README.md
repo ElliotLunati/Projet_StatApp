@@ -192,7 +192,7 @@ L'API sera accessible à l'adresse : `https://audio-to-text-user-votre-username.
 Aller sur l'URL suivant (ne pas oublier de modifier 'votre-username')
 
 ```bash
-"https://audio-to-text-user-votre-username.lab.sspcloud.fr/transcribe"
+"https://audio-to-text-user-votre-username.lab.sspcloud.fr"
 ```
 
 ## Utilisation
