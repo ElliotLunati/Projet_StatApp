@@ -194,12 +194,3 @@ Aller sur l'URL suivant (ne pas oublier de modifier 'votre-username')
 ```bash
 "https://audio-to-text-user-votre-username.lab.sspcloud.fr"
 ```
-
-## Utilisation
-
-### Endpoints disponibles
-
-### Formats audio supportés
-
-- WAV (`.wav`)
-- MP3 (`.mp3`)

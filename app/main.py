@@ -4,19 +4,14 @@ import os
 import re
 import tempfile
 import warnings
-from contextlib import contextmanager
-from threading import Lock
-from typing import Generator, Tuple
 
 import torch
-import torchaudio
 import whisper
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from peft import PeftModel
 from pydantic import BaseModel, Field
-from pyannote.audio import Pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 warnings.filterwarnings("ignore")
@@ -40,7 +35,7 @@ class TextToLatexRequest(BaseModel):
 
 
 class ModelShifter:
-    """Charge les modeles a la demande et bascule proprement entre Whisper et Qwen."""
+    """Charge les modeles Whisper et Qwen au demarrage et les conserve en memoire."""
 
     def __init__(self, whisper_size: str, qwen_adapter_dir: str):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,18 +43,18 @@ class ModelShifter:
 
         self.whisper_size = whisper_size
         self.qwen_adapter_dir = qwen_adapter_dir
-        self._lock = Lock()
-
-        self.whisper_model = None
-        self.qwen_model = None
-        self.qwen_tokenizer = None
-        self.loaded_model_name = None
 
         if self.gpu_available:
             print(f"GPU disponible: {torch.cuda.get_device_name(0)}")
             print(f"Nombre de GPUs: {torch.cuda.device_count()}")
         else:
             print("GPU non disponible, utilisation du CPU")
+
+        # Charger les modeles immediatement au demarrage
+        print("Initialisation des modeles...")
+        self.whisper_model = self._load_whisper()
+        self.qwen_model, self.qwen_tokenizer = self._load_qwen()
+        print("Tous les modeles charges avec succes!")
 
     @staticmethod
     def _read_base_model_name(adapter_dir: str) -> str:
@@ -72,11 +67,6 @@ class ModelShifter:
             return config.get("base_model_name_or_path", default_base)
         except (OSError, json.JSONDecodeError):
             return default_base
-
-    def _cleanup_memory(self) -> None:
-        gc.collect()
-        if self.gpu_available:
-            torch.cuda.empty_cache()
 
     @staticmethod
     def _extract_assistant_prediction(generated_text: str) -> str:
@@ -104,35 +94,16 @@ class ModelShifter:
     def _get_model_device(model) -> torch.device:
         return next(model.parameters()).device
 
-    def _ensure_whisper_loaded(self) -> None:
-        if self.whisper_model is not None:
-            return
-
-        startup_device = (
-            "cpu"  # On le passe sur gpu ensuite pour l'utilisation (si dispo)
-        )
+    def _load_whisper(self):
+        """Charge le modele Whisper et le retourne."""
+        startup_device = "cpu"
         print(f"Chargement du modele Whisper {self.whisper_size} sur {startup_device}")
-        self.whisper_model = whisper.load_model(
-            self.whisper_size, device=startup_device
-        )
+        model = whisper.load_model(self.whisper_size, device=startup_device)
         print("Modele Whisper charge avec succes")
+        return model
 
-    def _offload_whisper(self) -> None:
-        if self.whisper_model is not None and self.gpu_available:
-            self.whisper_model.to(torch.device("cpu"))
-
-        self._cleanup_memory()
-
-    def _move_whisper_to_gpu(self) -> None:
-        if not self.gpu_available:
-            return
-
-        self.whisper_model.to(self.device)
-
-    def _ensure_qwen_loaded(self) -> None:
-        if self.qwen_model is not None:
-            return
-
+    def _load_qwen(self):
+        """Charge le modele Qwen avec son tokenizer et les retourne."""
         base_model_name = self._read_base_model_name(self.qwen_adapter_dir)
         print(f"Chargement du modele Qwen base={base_model_name} avec QLoRA")
 
@@ -158,120 +129,79 @@ class ModelShifter:
                 low_cpu_mem_usage=True,
             ).to(self.device)
 
-        self.qwen_model = PeftModel.from_pretrained(
-            base_model,
-            self.qwen_adapter_dir,
-        )
-        self.qwen_model.eval()
+        model = PeftModel.from_pretrained(base_model, self.qwen_adapter_dir)
+        model.eval()
 
-        if self.qwen_tokenizer is None:
-            self.qwen_tokenizer = AutoTokenizer.from_pretrained(
-                self.qwen_adapter_dir,
-                trust_remote_code=True,
-            )
-            if self.qwen_tokenizer.pad_token is None and self.qwen_tokenizer.eos_token:
-                self.qwen_tokenizer.pad_token = self.qwen_tokenizer.eos_token
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.qwen_adapter_dir,
+            trust_remote_code=True,
+        )
+        if tokenizer.pad_token is None and tokenizer.eos_token:
+            tokenizer.pad_token = tokenizer.eos_token
 
         print("Modele Qwen charge avec succes")
+        return model, tokenizer
 
-    def _unload_qwen(self) -> None:
-        if self.qwen_model is not None:
-            del self.qwen_model
-            self.qwen_model = None
-        self._cleanup_memory()
-
-    @contextmanager
-    def use_whisper(self) -> Generator:
-        with self._lock:
-            if self.loaded_model_name != "whisper":
-                if self.loaded_model_name == "qwen":
-                    self._unload_qwen()
-                self._ensure_whisper_loaded()
-
-            self._move_whisper_to_gpu()
-            self.loaded_model_name = "whisper"
-            try:
-                yield self.whisper_model
-            finally:
-                # Le modele reste charge tant qu'aucun switch explicite n'est demande.
-                pass
-
-    @contextmanager
-    def use_qwen(self) -> Generator[Tuple, None, None]:
-        with self._lock:
-            if self.loaded_model_name != "qwen":
-                if self.loaded_model_name == "whisper":
-                    self._offload_whisper()
-                self._ensure_qwen_loaded()
-
-            self.loaded_model_name = "qwen"
-            try:
-                yield self.qwen_model, self.qwen_tokenizer
-            finally:
-                # Le modele reste charge tant qu'aucun switch explicite n'est demande.
-                pass
+    def transcribe(self, audio_path: str) -> dict:
+        """Transcrit un fichier audio et retourne le resultat."""
+        return self.whisper_model.transcribe(audio_path)
 
     def generate_latex(self, text: str, max_new_tokens: int = 256) -> str:
-        with self.use_qwen() as (model, tokenizer):
-            # Prompt aligne avec le schema d'inference valide dans evaluation.py.
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu es un assistant mathematique qui traduit de l'anglais parle vers des equations."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": text,
-                },
-            ]
+        """Genere du code LaTeX a partir du texte en utilisant Qwen."""
+        # Prompt aligne avec le schema d'inference valide dans evaluation.py.
+        messages = [
+            {
+                "role": "system",
+                "content": "Tu es un assistant mathematique qui traduit de l'anglais parle vers des equations.",
+            },
+            {"role": "user", "content": text},
+        ]
 
-            try:
-                prompt = tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=False,
-                )
-            except TypeError:
-                prompt = tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
-            except (AttributeError, ValueError, KeyError, RuntimeError):
-                prompt = (
-                    "Convertis ce texte mathematique en code LaTeX. "
-                    "Reponds uniquement avec du LaTeX.\n\n"
-                    f"Texte:\n{text}\n\nLaTeX:\n"
-                )
-
-            model_inputs = tokenizer(prompt, return_tensors="pt")
-
-            model_device = self._get_model_device(model)
-            model_inputs = {k: v.to(model_device) for k, v in model_inputs.items()}
-            input_length = model_inputs["input_ids"].shape[-1]
-
-            with torch.inference_mode():
-                generated = model.generate(
-                    **model_inputs,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=False,
-                    pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
-                )
-
-            generated_ids = generated[:, input_length:]
-            generated_text = tokenizer.decode(
-                generated_ids[0], skip_special_tokens=True
+        try:
+            prompt = self.qwen_tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
             )
-            latex_code = self._extract_assistant_prediction(generated_text)
+        except TypeError:
+            prompt = self.qwen_tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except (AttributeError, ValueError, KeyError, RuntimeError):
+            prompt = (
+                "Convertis ce texte mathematique en code LaTeX."
+                "Reponds uniquement avec du LaTeX.\n\n"
+                f"Texte:\n{text}\n\nLaTeX:\n"
+            )
 
-            if not latex_code:
-                raise RuntimeError("La generation LaTeX a retourne une reponse vide")
+        model_inputs = self.qwen_tokenizer(prompt, return_tensors="pt")
 
-            return latex_code
+        model_device = self._get_model_device(self.qwen_model)
+        model_inputs = {k: v.to(model_device) for k, v in model_inputs.items()}
+        input_length = model_inputs["input_ids"].shape[-1]
+
+        with torch.inference_mode():
+            generated = self.qwen_model.generate(
+                **model_inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=self.qwen_tokenizer.pad_token_id,
+                eos_token_id=self.qwen_tokenizer.eos_token_id,
+            )
+
+        generated_ids = generated[:, input_length:]
+        generated_text = self.qwen_tokenizer.decode(
+            generated_ids[0], skip_special_tokens=True
+        )
+        latex_code = self._extract_assistant_prediction(generated_text)
+
+        if not latex_code:
+            raise RuntimeError("La generation LaTeX a retourne une reponse vide")
+
+        return latex_code
 
 
 app = FastAPI()
@@ -314,7 +244,7 @@ async def transcribe_audio(
     audio_file: UploadFile = File(...),
 ):
     """
-    Reçoit un fichier audio et retourne la transcription texte
+    Reçoit un fichier audio, retourne la transcription texte et la conversion LaTeX.
     """
     allowed_extensions = [".wav", ".mp3", ".webm", ".ogg", ".m4a"]
     file_extension = os.path.splitext(audio_file.filename)[1].lower()
@@ -336,20 +266,26 @@ async def transcribe_audio(
             temp_path = temp_file.name
 
         try:
-            with model_shifter.use_whisper() as whisper_model:
-                result = whisper_model.transcribe(temp_path)
+            result = model_shifter.transcribe(temp_path)
 
-                segments = result.get("segments", [])
-                for seg in segments:
-                    print(
-                        f"[{seg['start']:.1f}s - {seg['end']:.1f}s]: {seg['text'].strip()}"
-                    )
+            segments = result.get("segments", [])
+            for seg in segments:
+                print(
+                    f"[{seg['start']:.1f}s - {seg['end']:.1f}s]: {seg['text'].strip()}"
+                )
+
+            transcription_text = result["text"].strip()
+            if not transcription_text:
+                raise RuntimeError("Aucun texte detecte dans l'audio")
+
+            latex_code = model_shifter.generate_latex(transcription_text)
 
             return JSONResponse(
                 content={
                     "filename": audio_file.filename,
-                    "text": result["text"],
+                    "text": transcription_text,
                     "language": result.get("language", "unknown"),
+                    "latex": latex_code,
                 }
             )
         finally:

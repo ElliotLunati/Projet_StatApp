@@ -380,17 +380,21 @@
             overflow-x: auto;
         }
 
+        .audio-latex-block {
+            margin-top: 20px;
+        }
+
     </style>
     <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
 <body>
     <div class="container">
         <img src="/images/LOGO-ENSAE.png" alt="Logo ENSAE" class="logo-ensae">
-        <h1>Studio Audio et LaTeX</h1>
-        <p class="subtitle">Transcription Whisper et conversion Texte vers LaTeX avec Qwen QLoRA</p>
+        <h1>Conversion audio vers LaTeX</h1>
+        <p class="subtitle">Transcription d'audio à contenu mathématique vers LaTeX</p>
 
         <div class="tabs">
-            <button class="tab-btn active" id="audioTab">Audio vers Texte</button>
+            <button class="tab-btn active" id="audioTab">Audio vers LaTex</button>
             <button class="tab-btn" id="latexTab">Texte vers LaTeX</button>
         </div>
 
@@ -421,13 +425,19 @@
 
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>Transcription en cours...</p>
+                <p>Transcription et generation LaTeX en cours...</p>
             </div>
 
             <div class="error" id="error"></div>
 
             <div class="result" id="result">
-                <div class="result-title">Transcription</div>
+                <div class="latex-title">Code LaTeX genere</div>
+                <div class="audio-latex-block">
+                    <pre class="latex-code" id="audioLatexCode"></pre>
+                    <div class="latex-title">Apercu</div>
+                    <div class="latex-preview" id="audioLatexPreview"></div>
+                </div>
+                <div class="result-title" style="margin-top: 20px;">Transcription</div>
                 <div class="result-text" id="resultText"></div>
                 <div class="result-meta">
                     <strong>Fichier :</strong> <span id="resultFile"></span><br>
@@ -479,6 +489,8 @@
         const resultText = document.getElementById('resultText');
         const resultFile = document.getElementById('resultFile');
         const resultLang = document.getElementById('resultLang');
+        const audioLatexCode = document.getElementById('audioLatexCode');
+        const audioLatexPreview = document.getElementById('audioLatexPreview');
         const startRecordBtn = document.getElementById('startRecordBtn');
         const stopRecordBtn = document.getElementById('stopRecordBtn');
         const recordStatus = document.getElementById('recordStatus');
@@ -680,8 +692,14 @@
                 resultFile.textContent = data.filename;
                 resultLang.textContent = data.language.toUpperCase();
                 resultText.textContent = data.text || 'Aucun texte detecte';
+                audioLatexCode.textContent = data.latex || '';
+                audioLatexPreview.textContent = data.latex ? `$$${data.latex}$$` : '';
 
                 result.classList.add('active');
+
+                if (window.MathJax && window.MathJax.typesetPromise && data.latex) {
+                    await window.MathJax.typesetPromise([audioLatexPreview]);
+                }
 
             } catch (err) {
                 showError(error, err.message);
